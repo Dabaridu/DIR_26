@@ -123,6 +123,61 @@ python main.py
 
 ---
 
+## 🔧 Robot Setup (IMPORTANT)
+
+Before running the application, make sure the robot is properly configured:
+
+### Required JOBs
+
+The following JOBs must exist on the controller:
+
+* `GO-HOME-ETHERNET-EXAMPLE`
+* `ETHERNET-EXAMPLE-JOB`
+
+👉 These JOBs are executed from the Python application.
+
+---
+
+### Variables used
+
+The application writes to robot variables:
+
+| Variable | Purpose                |
+| -------- | ---------------------- |
+| 50       | TCP speed (mm/s * 100) |
+| 51       | Joint speed (% * 100)  |
+
+👉 These variables must be used inside the JOB program.
+
+---
+
+### Robot Mode
+
+* Set controller to **REMOTE or PLAY mode**
+* Ensure **no active alarms**
+* Ensure **servo can be enabled**
+
+---
+
+### Network Configuration
+
+* PC and robot must be in the same subnet
+
+Example:
+
+```
+PC:     192.168.65.100
+Robot:  192.168.65.249
+```
+
+Test connection:
+
+```bash
+ping 192.168.65.249
+```
+
+---
+
 ## ⚠️ Safety Notice
 
 This project controls an industrial robot.
@@ -131,6 +186,17 @@ This project controls an industrial robot.
 * Always verify emergency stop functionality
 * Use low speeds during testing
 * Follow Yaskawa safety guidelines
+
+---
+
+## 🧪 Troubleshooting
+
+| Problem                     | Possible cause                   |
+| --------------------------- | -------------------------------- |
+| Robot does not move         | Wrong mode (not REMOTE/PLAY)     |
+| Job does not start          | JOB name incorrect               |
+| No connection               | Wrong IP or network              |
+| Servo turns OFF immediately | Job finished or safety condition |
 
 ---
 
