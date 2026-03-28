@@ -1,49 +1,58 @@
+# 🦾 HC10 Robot Ethernet Control Demo
 
-* Python acts as an external controller
-* YRC1000 executes motion commands or JOB programs
-* Communication is done via High-Speed Ethernet (UDP)
+## 📌 Overview
+
+This project demonstrates how to control a **Yaskawa Motoman HC10 robot** from a Python application using **High-Speed Ethernet (UDP communication)**.
+
+It is designed as a practical example of integrating industrial robotics with external software systems — without requiring a PLC.
+
+The project supports two main approaches:
+- **JOB-based control (recommended)**
+- **Direct motion control via Python (advanced use)**
+
+---
+
+## ⚙️ System Architecture
+[ PC (Python Application) ] <--UDP--> [ YRC1000 Controller ] --> [ HC10 Robot ]
+
+
+- Python application sends commands via Ethernet
+- YRC1000 controller executes motion
+- Robot performs physical movement
 
 ---
 
 ## 🖥️ Features
 
-### 🎮 High-level control (GUI)
-* ▶️ Run predefined robot JOBs
-* ⚡ Adjustable motion speeds
-* 🔄 Real-time status monitoring
-* 🏠 Automatic homing
-* 🛑 Servo ON/OFF control
+### GUI Control
+- Run predefined robot JOBs
+- Adjust speed parameters dynamically
+- Monitor robot state (Servo, Mode, Running)
+- Send robot to HOME position
+- Force servo OFF
 
-### ⚙️ Low-level control (Python API)
-* 📍 Read robot Cartesian position
-* ➡️ Send linear motion commands (`move_straight`)
-* 🔢 Write robot variables (INT / REAL)
-* 🧠 Parameter-based motion control
+### Python API (Low-level)
+- Read robot position (Cartesian)
+- Execute linear motion (`move_straight`)
+- Write robot variables (INT / REAL)
+- Start JOB programs remotely
 
 ---
 
-## 🧠 Control Modes
+## 🧠 How Control Works
 
-This project demonstrates two complementary control approaches:
-
-### 1. JOB-based control (recommended for production)
+### 1. JOB-Based Control (recommended)
 
 Python:
-- sets variables
-- triggers JOB execution
+- sets variables (e.g. speed)
+- selects and starts JOB
 
 Robot:
 - executes motion logic internally
 
-✔ safe  
-✔ deterministic  
-✔ industry standard  
-
----
-
-### 2. Direct motion control (experimental)
-
-Python sends commands like:
+Example:
 
 ```python
-yrc.move_straight(x, y, z, rx, ry, rz, speed)
+yrc.int_variable_write(100, 50)
+yrc.job_select("ETHERNET-EXAMPLE-JOB", 0)
+yrc.job_start()
