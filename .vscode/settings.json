@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./HC10 -ethernet/2_examples_basic"
+    ]
+}
