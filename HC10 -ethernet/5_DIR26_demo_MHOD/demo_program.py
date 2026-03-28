@@ -1,11 +1,12 @@
-"""Gripper test"""
-__author__ = "Gaja Zumer & Jernej Puc"
+"""DIR demo program"""
+__author__ = "Matej Hodnik"
 __version__ = "18.08.22"
-__email__ = "colette.dubois8@gmail.com, nejc.puc@gmail.com"
+__email__ = "mh2078@student.uni-lj.si"
 
 
 ########################################################################################################################
 # Import statements
+
 
 from yrc_high_speed_ethernet import ClientOfYRC, UDPRequest, UDPAnswer
 from time import sleep
