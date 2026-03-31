@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 import sys
 import os
+import pprint 
 
 # Add Camera directory to path for apriltag import
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../Camera'))
@@ -69,7 +70,7 @@ def gripper_release():
     else:
         print("Failed to select DIR26CILOPEN job")
 
-def capture_photo_with_transform(camera_id=1, tag_size=0.02375):
+def capture_photo_with_transform(camera_id=0, tag_size=0.02375):
     """
     Capture a photo from camera and return homogeneous transform matrix.
     
@@ -109,10 +110,8 @@ def capture_photo_with_transform(camera_id=1, tag_size=0.02375):
         families='tag36h11',
         nthreads=1,
         quad_decimate=1.0,
-        quad_sigma=0.0,
+        quad_blur=0.0,
         refine_edges=True,
-        decode_sharpening=0.25,
-        debug=False
     )
     
     try:
@@ -170,12 +169,11 @@ def capture_photo_with_transform(camera_id=1, tag_size=0.02375):
     tag_id = detection.tag_id
     
     return {
-        'pose_matrix': pose,
-        'translation': translation,
-        'rotation': rotation,
-        'rpy_deg': rpy_deg,
-        'tag_id': tag_id,
-        'frame': frame,
+        'pose_matrix':  pose.tolist(),
+        'translation':  translation.tolist(),
+        'rotation':     rotation.tolist(),
+        'rpy_deg':      rpy_deg.tolist(),
+        'tag_id':       tag_id,
         'camera_params': camera_params
     }
 
@@ -207,42 +205,35 @@ TZ0 = 140*ROT_PREE
 STEP_10CM = 100000   # 100 mm
 SPEED = 2000          # 1 = 1.0 mm/s
 
-print("Initial status:")
-print(yrc.status_information_reading())
+# print("Initial status:")
+# print(yrc.status_information_reading())
+# 
+# print("\nServo ON:")
+# print(yrc.servo_on())
+# print("Servos ON")
 
-
-print("\nServo ON:")
-print(yrc.servo_on())
-print("Servos ON")
-
-sleep(1)
+# sleep(1)
 
 # print("\nMove ")
 # print(yrc.move_link(X, Y, Z, TX, TY, TZ, SPEED))
 # wait_move_finnish()
 
-
 # print("\nMove back to start:")
 # print(yrc.move_straight(X0, Y0, Z0, TX0, TY0, TZ0, SPEED))
 # wait_move_finnish()
 
-gripper_grab()
+# gripper_grab()
 
-sleep(5)
+# sleep(5)
 
+import json
 pose = capture_photo_with_transform()
-print(pose)
+print(json.dumps(pose)) 
 
 # gripper_release()
 
 # sleep(1)
 
-
-
-
-
-print("\nServo OFF:")
-print(yrc.servo_off())
-print("Servos OFF")
-
-
+# print("\nServo OFF:")
+# print(yrc.servo_off())
+# print("Servos OFF")
