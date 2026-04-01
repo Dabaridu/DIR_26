@@ -1,0 +1,107 @@
+import numpy as np
+
+#Capturing photo and detecting AprilTag april tag 2
+[[-0.6266951852754674, -0.4402493541527155, -0.642988064368744, -0.3789202032127194], 
+[0.7616192219449228, -0.5206326931711004, -0.38584680841678237, -0.19150078606580023],
+[-0.1648917994217971, -0.7315204063930979, 0.6615803726788746, 0.8691322293271699],
+[0.0, 0.0, 0.0, 1.0]]
+
+# Convert translation from m to mm (multiply by 1000)
+HC = np.array([[-0.6266951852754674, -0.4402493541527155, -0.642988064368744, -0.3789202032127194], 
+                   [0.7616192219449228, -0.5206326931711004, -0.38584680841678237, -0.19150078606580023],
+                   [-0.1648917994217971, -0.7315204063930979, 0.6615803726788746, 0.8691322293271699],
+                   [0.0, 0.0, 0.0, 1.0]])
+
+# Multiply translation column (last column, first 3 rows) by 1000
+HC[:3, 3] *= 1000
+
+print(HC.tolist())
+
+#Robot current position of tool 26 at camera detecting april tag 2:
+{'x_mm': 521.006, 'y_mm': 188.275, 'z_mm': 584.78, 
+ 'tx_deg': 177.5772, 'ty_deg': -84.3365, 'tz_deg': 96.4181, 
+ 'raw': {'x': 521006, 'y': 188275, 'z': 584780, 
+         'tx': 1775772, 'ty': -843365, 'tz': 964181}}
+
+# Convert robot position to homogeneous transformation matrix
+position = {'x_mm': 521.006, 'y_mm': 188.275, 'z_mm': 584.78, 
+            'tx_deg': 177.5772, 'ty_deg': -84.3365, 'tz_deg': 96.4181}
+
+# Convert degrees to radians
+tx_rad = np.radians(position['tx_deg'])
+ty_rad = np.radians(position['ty_deg'])
+tz_rad = np.radians(position['tz_deg'])
+
+# Create rotation matrices (ZYX convention)
+Rz = np.array([[np.cos(tz_rad), -np.sin(tz_rad), 0],
+               [np.sin(tz_rad), np.cos(tz_rad), 0],
+               [0, 0, 1]])
+
+Ry = np.array([[np.cos(ty_rad), 0, np.sin(ty_rad)],
+               [0, 1, 0],
+               [-np.sin(ty_rad), 0, np.cos(ty_rad)]])
+
+Rx = np.array([[1, 0, 0],
+               [0, np.cos(tx_rad), -np.sin(tx_rad)],
+               [0, np.sin(tx_rad), np.cos(tx_rad)]])
+
+R = Rz @ Ry @ Rx
+t = np.array([position['x_mm'], position['y_mm'], position['z_mm']])
+
+H = np.eye(4)
+H[:3, :3] = R
+H[:3, 3] = t
+
+print(H.tolist())
+
+#Robot current position at tag 2:
+{'x_mm': 704.412, 'y_mm': 325.233, 'z_mm': 372.982, 
+ 'tx_deg': 138.5319, 'ty_deg': 3.9771, 'tz_deg': 92.0742, 
+ 'raw': {'x': 704412, 'y': 325233, 'z': 372982, 
+         'tx': 1385319, 'ty': 39771, 'tz': 920742}}
+
+position2 = {'x_mm': 704.412, 'y_mm': 325.233, 'z_mm': 372.982, 
+             'tx_deg': 138.5319, 'ty_deg': 3.9771, 'tz_deg': 92.0742}
+
+tx_rad = np.radians(position2['tx_deg'])
+ty_rad = np.radians(position2['ty_deg'])
+tz_rad = np.radians(position2['tz_deg'])
+
+Rz = np.array([[np.cos(tz_rad), -np.sin(tz_rad), 0],
+               [np.sin(tz_rad), np.cos(tz_rad), 0],
+               [0, 0, 1]])
+
+Ry = np.array([[np.cos(ty_rad), 0, np.sin(ty_rad)],
+               [0, 1, 0],
+               [-np.sin(ty_rad), 0, np.cos(ty_rad)]])
+
+Rx = np.array([[1, 0, 0],
+               [0, np.cos(tx_rad), -np.sin(tx_rad)],
+               [0, np.sin(tx_rad), np.cos(tx_rad)]])
+
+R = Rz @ Ry @ Rx
+t = np.array([position2['x_mm'], position2['y_mm'], position2['z_mm']])
+
+H2 = np.eye(4)
+H2[:3, :3] = R
+H2[:3, 3] = t
+
+print(H2.tolist())
+
+
+#HC camera
+#H -> H2 --> Hm_move
+
+H_move = H @ H2
+
+print("Transformation matrix \n")
+print(H_move.tolist())
+
+#calculate transformation from H_move and inverse of HC
+HC_inv = np.linalg.inv(HC)
+H_camera_to_base = HC_inv @ H_move
+
+print("Result transformation matrix:\n")
+print(H_camera_to_base.tolist())
+
+H_camera_to_base = np.array([[-0.6244646651144947, 0.43538838553981196, -0.6484449365678459, -167.96032713859825], [-0.42045161619151855, -0.8870494139306836, -0.1906928831581591, -1241.4045809950167], [-0.65822816748099, 0.15355875417007986, 0.7369907655814627, -838.3034700331452], [0.0, 0.0, 0.0, 1.0]]  )    

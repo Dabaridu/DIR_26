@@ -620,8 +620,9 @@ class ClientOfYRC:
         # Confirm successful operation
         return ans_packet.status[0] == 0
 
-    def move_link(self, x, y, z, tx, ty, tz, speed):
+    def move_link(self, x, y, z, tx, ty, tz, speed, tool_no=0):
         """See command 3.3.39, page 128"""
+
 
         # Sub-header
         sub_header = {'commandNo': [0x8a, 0x00],
@@ -646,7 +647,9 @@ class ClientOfYRC:
                  0, 0, 0, 0,                        # Reservation
                  0, 0, 0, 0,                        # Type
                  0, 0, 0, 0,                        # Expanded type
-                 0, 0, 0, 0,                        # Tool No
+                 ]
+        data += list(struct.pack('=l', int(tool_no)))   # Tool No
+        data += [
                  1, 0, 0, 0,                        # User coordinate No
                  0, 0, 0, 0,                        # Base 1st axis position
                  0, 0, 0, 0,                        # Base 2nd axis position
@@ -671,8 +674,13 @@ class ClientOfYRC:
         # Confirm successful operation
         return ans_packet.status[0] == 0
 
-    def move_straight(self, x, y, z, tx, ty, tz, speed):
+    def move_straight(self, x, y, z, tx, ty, tz, speed, tool_no=0):
         """See command 3.3.39, page 128"""
+
+        if tool_no != 0:
+            COORD_SYSTEM = 19
+        else:
+            COORD_SYSTEM = 16
 
         # Sub-header
         sub_header = {'commandNo': [0x8a, 0x00],
@@ -686,7 +694,7 @@ class ClientOfYRC:
                 0, 0, 0, 0,                         # Control group (station)
                 1, 0, 0, 0]                         # Classification of operations
         data += list(struct.pack('=l', speed))      # Speed in 0.1 mm/s and 0.1 degrees/s
-        data += [16, 0, 0, 0]                       # Operation coordinate
+        data += [COORD_SYSTEM, 0, 0, 0]             # Operation coordinate
         data += list(struct.pack('=l', x))          # X coordinate in micrometers
         data += list(struct.pack('=l', y))          # Y coordinate
         data += list(struct.pack('=l', z))          # Z coordinate
@@ -697,7 +705,9 @@ class ClientOfYRC:
                  0, 0, 0, 0,                        # Reservation
                  0, 0, 0, 0,                        # Type
                  0, 0, 0, 0,                        # Expanded type
-                 0, 0, 0, 0,                        # Tool No
+                 ]
+        data += list(struct.pack('=l', int(tool_no)))   # Tool No
+        data += [
                  1, 0, 0, 0,                        # User coordinate No
                  0, 0, 0, 0,                        # Base 1st axis position
                  0, 0, 0, 0,                        # Base 2nd axis position

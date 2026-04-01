@@ -294,10 +294,6 @@ library used by ctypes.
         else:
             candidate_filenames = ['libapriltag.so']
 
-        candidate_filenames[0] = "/home/user/projects/DIR_26/Camera/libapriltag.so"
-
-        for filename in candidate_filenames: 
-            self.libc = ctypes.CDLL(filename)
 
         # if full path not found just try opening the raw filename;
         # this should search whatever paths dlopen is supposed to

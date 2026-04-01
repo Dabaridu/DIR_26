@@ -39,6 +39,7 @@ else:
 #####################################CONSTANTS##########################################################################
 ROT_PREE = 10000 #0.0001 degres -> 1deg
 TRAN_PREE = 1000 # 0.001 mm -> 1mm
+M_TO_MM = 1000.0
 
 #################USER FUNCTIONS##########################################################################################
 def wait_move_finnish():
@@ -75,20 +76,6 @@ def gripper_release():
 
 
 def _create_detector_with_fallback():
-    # Prefer pupil_apriltags if available; it is usually more stable for repeated live detections.
-    try:
-        from pupil_apriltags import Detector as PupilDetector
-        detector = PupilDetector(
-            families='tag36h11',
-            nthreads=1,
-            quad_decimate=1.0,
-            quad_sigma=0.0,
-            refine_edges=True,
-        )
-        return detector, 'pupil_apriltags'
-    except ImportError:
-        pass
-
     options = apriltag.DetectorOptions(
         families='tag36h11',
         nthreads=1,
@@ -104,7 +91,19 @@ def _create_detector_with_fallback():
         if 'could not find apriltag shared library' not in str(exc):
             raise
 
-        return None, 'missing_backend'
+        try:
+            from pupil_apriltags import Detector as PupilDetector
+        except ImportError:
+            return None, 'missing_backend'
+
+        detector = PupilDetector(
+            families='tag36h11',
+            nthreads=1,
+            quad_decimate=1.0,
+            quad_sigma=0.0,
+            refine_edges=True,
+        )
+        return detector, 'pupil_apriltags'
 
 
 def _draw_pose_axes(overlay, camera_params, tag_size, pose):
@@ -156,7 +155,7 @@ def _rotation_matrix_to_euler_xyz_deg(rotation):
 
 
 def _build_pose_result(pose, tag_id, camera_params):
-    translation = pose[:3, 3]
+    translation = pose[:3, 3] * M_TO_MM
     rotation = pose[:3, :3]
     rpy_deg = _rotation_matrix_to_euler_xyz_deg(rotation)
     return {
@@ -203,6 +202,86 @@ def read_current_robot_position():
         }
     }
 
+def transform_robot_to_tool(robot_pose, tool_offset):
+    """
+    Transform robot pose by a tool offset.
+
+        Args:
+                robot_pose:
+                        - tuple/list -> (translation[3], rotation[3]) in mm / deg
+                            Example: ([x, y, z], [rx, ry, rz])
+                        - dict from read_current_robot_position() with keys
+                            x_mm, y_mm, z_mm, tx_deg, ty_deg, tz_deg
+        tool_offset: dict with keys: x, y, z, tx, ty, tz (mm / deg).
+
+    Returns:
+        dict with transformed translation, rotation and homogeneous matrix.
+    """
+    if isinstance(robot_pose, dict):
+        pose_required = ("x_mm", "y_mm", "z_mm", "tx_deg", "ty_deg", "tz_deg")
+        pose_missing = [k for k in pose_required if k not in robot_pose]
+        if pose_missing:
+            raise ValueError(f"robot_pose dict missing keys: {pose_missing}")
+        translation = np.asarray(
+            [robot_pose["x_mm"], robot_pose["y_mm"], robot_pose["z_mm"]],
+            dtype=np.float64,
+        ).reshape(3)
+        rotation = np.asarray(
+            [robot_pose["tx_deg"], robot_pose["ty_deg"], robot_pose["tz_deg"]],
+            dtype=np.float64,
+        ).reshape(3)
+    elif isinstance(robot_pose, (tuple, list)) and len(robot_pose) == 2:
+        translation = np.asarray(robot_pose[0], dtype=np.float64).reshape(3)
+        rotation = np.asarray(robot_pose[1], dtype=np.float64).reshape(3)
+    else:
+        raise ValueError(
+            "robot_pose must be (translation[3], rotation[3]) or "
+            "dict with x_mm/y_mm/z_mm/tx_deg/ty_deg/tz_deg"
+        )
+
+    required = ("x", "y", "z", "tx", "ty", "tz")
+    missing = [k for k in required if k not in tool_offset]
+    if missing:
+        raise ValueError(f"tool_offset missing keys: {missing}")
+
+    h_robot = _pose_to_homogeneous(
+        float(translation[0]),
+        float(translation[1]),
+        float(translation[2]),
+        float(rotation[0]),
+        float(rotation[1]),
+        float(rotation[2]),
+    )
+
+    h_tool = _pose_to_homogeneous(
+        float(tool_offset["x"]),
+        float(tool_offset["y"]),
+        float(tool_offset["z"]),
+        float(tool_offset["tx"]),
+        float(tool_offset["ty"]),
+        float(tool_offset["tz"]),
+    )
+
+    h_out = h_robot @ h_tool
+    out_translation = h_out[:3, 3]
+    out_rotation = _rotation_matrix_to_euler_xyz_deg(h_out[:3, :3])
+
+    translation_list = out_translation.tolist()
+    rotation_list = out_rotation.tolist()
+
+    return {
+        "matrix": h_out.tolist(),
+        "translation": translation_list,  # [x, y, z]
+        "rotation": rotation_list,        # [tx, ty, tz]
+        # Backward-compatible named keys used by existing call sites.
+        "x_mm": translation_list[0],
+        "y_mm": translation_list[1],
+        "z_mm": translation_list[2],
+        "tx_deg": rotation_list[0],
+        "ty_deg": rotation_list[1],
+        "tz_deg": rotation_list[2],
+    }
+
 
 _CAMERA_STATE = {
     'cap': None,
@@ -231,7 +310,12 @@ def camera_start(camera_id=1, tag_size=0.02375, window_name='AprilTag Live View'
         print(f"Error: Cannot open camera {camera_id}")
         return False
 
+    # Request a practical preview resolution; camera may clamp to nearest supported mode.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 1280, 720)
 
     _CAMERA_STATE['cap'] = cap
     _CAMERA_STATE['detector'] = detector
@@ -242,7 +326,7 @@ def camera_start(camera_id=1, tag_size=0.02375, window_name='AprilTag Live View'
     return True
 
 
-def camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0, target_id=None):
+def camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0):
     # Keeps requested function name, but detection is AprilTag-based.
     if _CAMERA_STATE['cap'] is None:
         if not camera_start(camera_id=camera_id, tag_size=size):
@@ -260,13 +344,17 @@ def camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0, target
     frame = None
     detection = None
     tag_id = None
-    pose_fail_count = 0
 
     while (time.monotonic() - start_t) < float(timeout):
         success, frame = cap.read()
         if not success:
             cv2.waitKey(1)
             continue
+
+        # Keep the live view responsive regardless of detection outcome.
+        cv2.imshow(window_name, frame)
+        if cv2.waitKey(1) & 0xFF == 27:
+            return None
 
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         try:
@@ -280,53 +368,22 @@ def camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0, target
                     tag_size=tag_size,
                 )
         except Exception:
-            # Skip unstable frame and continue trying until timeout.
-            cv2.waitKey(1)
+            # Skip unstable frame and continue updating preview.
             continue
-
-        cv2.imshow(window_name, frame)
-        if cv2.waitKey(1) & 0xFF == 27:
-            return None
 
         if len(detections) == 0:
             continue
 
-        detection = None
-        if target_id is None:
-            detection = detections[0]
+        detection = detections[0]
+        if backend == 'apriltag_ctypes':
+            pose, _e0, _e1 = detector.detection_pose(detection, camera_params, tag_size)
+            tag_id = detection.tag_id
         else:
-            for det in detections:
-                if int(getattr(det, 'tag_id', -1)) == int(target_id):
-                    detection = det
-                    break
-            if detection is None:
-                # Requested tag is not visible in this frame, keep waiting.
-                continue
-
-        try:
-            if backend == 'apriltag_ctypes':
-                pose, _e0, _e1 = detector.detection_pose(detection, camera_params, tag_size)
-                tag_id = detection.tag_id
-            else:
-                if hasattr(detection, 'pose_R') and hasattr(detection, 'pose_t'):
-                    pose = np.eye(4)
-                    pose[:3, :3] = np.asarray(detection.pose_R)
-                    pose[:3, 3] = np.asarray(detection.pose_t).reshape(3)
-                    tag_id = int(detection.tag_id)
-        except Exception:
-            pose = None
-            pose_fail_count += 1
-            if pose_fail_count >= 3:
-                # Recover from unstable backend behavior by recreating detector.
-                new_detector, new_backend = _create_detector_with_fallback()
-                if new_detector is not None:
-                    detector = new_detector
-                    backend = new_backend
-                    _CAMERA_STATE['detector'] = new_detector
-                    _CAMERA_STATE['backend'] = new_backend
-                    print(f"Detector recovered, using backend: {new_backend}")
-                pose_fail_count = 0
-            continue
+            if hasattr(detection, 'pose_R') and hasattr(detection, 'pose_t'):
+                pose = np.eye(4)
+                pose[:3, :3] = np.asarray(detection.pose_R)
+                pose[:3, 3] = np.asarray(detection.pose_t).reshape(3)
+                tag_id = int(detection.tag_id)
 
         if pose is not None:
             break
@@ -379,6 +436,7 @@ def _pose_to_homogeneous(x, y, z, rx_deg, ry_deg, rz_deg):
                      [0.0, 0.0, 1.0]], dtype=np.float64)
 
     r_m = rz_m @ ry_m @ rx_m
+    # r_m = rx_m @ ry_m @ rz_m
     h = np.eye(4, dtype=np.float64)
     h[:3, :3] = r_m
     h[:3, 3] = [x, y, z]
@@ -462,6 +520,27 @@ def h_to_move(H):
         "rpy_deg": rpy_deg,
     }
 
+
+def compute_tool_to_camera_from_calibration():
+    """Build fixed Tool->Camera transform from calibration poses (MATLAB-equivalent)."""
+    tc_calib = create_h_yaskawa(
+        [-0.37679815895757196 * M_TO_MM, -0.19150762252059986 * M_TO_MM, 0.8692484914166009 * M_TO_MM],
+        [-48.44676638338047, 8.942934926705307, 129.4669873830014],
+    )
+
+    h1_calib = create_h_yaskawa(
+        [521.006, 188.275, 584.78],
+        [177.5772, -84.3365, 96.4181],
+    )
+
+    h2_calib = create_h_yaskawa(
+        [704.412, 325.233, 372.982],
+        [138.5319, 3.9771, 92.0742],
+    )
+
+    h_camera_global = h2_calib @ np.linalg.inv(tc_calib)
+    return np.linalg.inv(h1_calib) @ h_camera_global
+
 ########################################################################################################################
 # Tests
 tool26 = {
@@ -474,9 +553,6 @@ tool26 = {
     "tz": -133.1550,
 }
 
-TAG_1 = 1
-TAG_2 = 3
-TAG_3 = 2
 
 #Home
 X0 = 499*TRAN_PREE #in mm
@@ -488,19 +564,11 @@ TZ0 = -36*ROT_PREE
 
 #Pos1
 X1 = 499*TRAN_PREE #in mm
-Y1 = -167*TRAN_PREE+100*TRAN_PREE
+Y1 = -167*TRAN_PREE+250*TRAN_PREE
 Z1 = 531*TRAN_PREE
 TX1 = 179*ROT_PREE #in deg
 TY1 = 0*ROT_PREE
 TZ1 = -36*ROT_PREE
-
-#Pos2
-X2 = 499*TRAN_PREE #in mm
-Y2 = -167*TRAN_PREE
-Z2 = 531*TRAN_PREE
-TX2 = 179*ROT_PREE #in deg
-TY2 = 0*ROT_PREE
-TZ2 = -36*ROT_PREE
 
 #point to camera transform
 T_point_to_camera = np.array([
@@ -509,6 +577,8 @@ T_point_to_camera = np.array([
     [-0.9837, -0.0148, 0.1791, -330.9248],
     [0.0, 0.0, 0.0, 1.0000]
 ])
+
+T_TOOL_TO_CAMERA = compute_tool_to_camera_from_calibration()
 
 
 
@@ -534,38 +604,100 @@ print(yrc.move_straight(X0, Y0, Z0, TX0, TY0, TZ0, SPEED, 0))
 wait_move_finnish()
 
 
-print("\nMove pos1 else:")
+print("\nMove somewhere else:")
+# print(yrc.move_link(521006, 188275, 584780, 1775772, -843365, 964181, SPEED, 26))
 print(yrc.move_link(X1, Y1, Z1, TX1, TY1, TZ1, SPEED, 0))
 wait_move_finnish()
 
-print("\nCapturing photo and detecting AprilTag of motor")
-pose = camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0, target_id=1)
+print("\nGripper grab:")
+gripper_grab()
+
+sleep(2)
+
+print("\nCapturing photo and detecting AprilTag...")
+
+pose = camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0)
+T_camera_tag = None
 
 if pose is None:
-     print("Skipping H2 move because AprilTag pose was not detected.")
+     print("Skipping move because AprilTag pose was not detected.")
 else:
     if(pose['tag_id'] == 1):
         print("zaznan motor")
-    print("camera data")
-    print(pose['translation'], pose['rpy_deg'], pose['tag_id'])
-
-sleep(5)
-
-print("\nMove pos2 else:")
-print(yrc.move_link(X2, Y2, Z2, TX2, TY2, TZ2, SPEED, 0))
-wait_move_finnish()
-
-print("\nCapturing photo and detecting AprilTag of vozicek")
-pose = camera_wait_for_aruco_detect(camera_id=1, size=0.02375, timeout=10.0, target_id=3)
-
-if pose is None:
-     print("Skipping H2 move because AprilTag pose was not detected.")
-else:
-    if(pose['tag_id'] == 3):
+    if(pose['tag_id'] == 2):
         print("zaznan voziček")
     print("camera data")
     print(pose['translation'], pose['rpy_deg'], pose['tag_id'])
 
+    T_camera_tag = pose_translation_rpy_to_h(pose['translation'], pose['rpy_deg'])
+    print("T_camera_tag:")
+    print(T_camera_tag)
+    
+    # Current tool pose in global frame (mm/deg)
+    H_now_pos = read_current_robot_position()
+    H_now = create_h_yaskawa(
+        [H_now_pos['x_mm'], H_now_pos['y_mm'], H_now_pos['z_mm']],
+        [H_now_pos['tx_deg'], H_now_pos['ty_deg'], H_now_pos['tz_deg']],
+    )
+
+    # MATLAB-equivalent runtime chain:
+    # H_camera_now = H_now * T_tool_to_camera
+    # H_target_tag = H_camera_now * T_camera_tag
+    H_camera_now = H_now @ T_TOOL_TO_CAMERA
+    H_target_tag = H_camera_now @ T_camera_tag
+    print("H_target_tag:")
+    print(H_target_tag)
+
+    target_pose = h_to_move(H_target_tag)
+    translation_mm = [
+        float(target_pose["translation"][0]),
+        float(target_pose["translation"][1]),
+        float(target_pose["translation"][2]),
+    ]
+    rotation_deg = [
+        float(target_pose["rpy_deg"][0]),
+        float(target_pose["rpy_deg"][1]),
+        float(target_pose["rpy_deg"][2]),
+    ]
+
+    print("wait for user confirm new move coordinates")
+    print(translation_mm)
+    print(rotation_deg)
+    
+    #correct rotation data to keep orientation
+    H_now_tool26 = transform_robot_to_tool(H_now_pos, tool26)
+    rotation_deg[0] = float(H_now_tool26['tx_deg'])
+    rotation_deg[1] = float(H_now_tool26['ty_deg'])
+    rotation_deg[2] = float(H_now_tool26['tz_deg'])
+
+    cmd_x = int(round(translation_mm[0] * TRAN_PREE))
+    cmd_y = int(round(translation_mm[1] * TRAN_PREE))
+    cmd_z = int(round(translation_mm[2] * TRAN_PREE))
+    cmd_tx = int(round(rotation_deg[0] * ROT_PREE))
+    cmd_ty = int(round(rotation_deg[1] * ROT_PREE))
+    cmd_tz = int(round(rotation_deg[2] * ROT_PREE))
+
+    print("corrected rotation: to keep orientation")
+    print(cmd_x, cmd_y, cmd_z, cmd_tx, cmd_ty, cmd_tz)
+
+    wait_for_space_key()
+
+    SPEED = 200
+    print(yrc.move_straight(cmd_x, cmd_y, cmd_z + STEP_10CM, cmd_tx, cmd_ty, cmd_tz, SPEED, 26))
+    # print(yrc.move_straight(translation[0], translation[1], translation[2]+STEP_10CM, 178, 3, -36, SPEED, 26))
+    wait_move_finnish()
+
+
+# print("\nRobot current position:")
+# robot_pos = read_current_robot_position()
+# print(robot_pos)
+
+print("\nGripper release:")
+gripper_release()
+
+sleep(2)
+
+#stop robot
 
 print("\nServo OFF:")
 print(yrc.servo_off())

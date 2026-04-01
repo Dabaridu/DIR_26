@@ -635,7 +635,7 @@ class ClientOfYRC:
                 0, 0, 0, 0,                         # Control group (station)
                 1, 0, 0, 0]                         # Classification of operations
         data += list(struct.pack('=l', speed))      # Speed in 0.1 mm/s and 0.1 degrees/s
-        data += [16, 0, 0, 0]                       # Operation coordinate
+        data += [16, 0, 0, 0]               # Operation coordinate 16-base, 17-robot, 18-user, 19-tool
         data += list(struct.pack('=l', x))          # X coordinate in micrometers
         data += list(struct.pack('=l', y))          # Y coordinate
         data += list(struct.pack('=l', z))          # Z coordinate
